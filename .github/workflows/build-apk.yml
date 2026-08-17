@@ -32,13 +32,19 @@ jobs:
 
       - name: Rebuild vocabulary asset
         run: |
-          for f in app/src/main/assets/index.b64.*; do
-            tr -cd 'A-Za-z0-9+/=' < "$f"
-          done | base64 -d > /tmp/index.html.gz
+          {
+            cat app/src/main/assets/index.b64.00 app/src/main/assets/index.b64.01 app/src/main/assets/index.b64.02 app/src/main/assets/index.b64.03 app/src/main/assets/index.b64.04 app/src/main/assets/index.b64.05
+            cat app/src/main/assets/fix06.a app/src/main/assets/fix06.b
+            cat app/src/main/assets/index.b64.07 app/src/main/assets/index.b64.08 app/src/main/assets/index.b64.09
+            cat app/src/main/assets/fix10.a app/src/main/assets/fix10.b
+            cat app/src/main/assets/index.b64.11 app/src/main/assets/index.b64.12 app/src/main/assets/index.b64.13 app/src/main/assets/index.b64.14 app/src/main/assets/index.b64.15 app/src/main/assets/index.b64.16
+          } | base64 -d > /tmp/index.html.gz
           gzip -t /tmp/index.html.gz
           gzip -dc /tmp/index.html.gz > app/src/main/assets/index.html
           test -s app/src/main/assets/index.html
+          test "$(wc -c < app/src/main/assets/index.html)" -eq 915376
           echo "Rebuilt index.html: $(wc -c < app/src/main/assets/index.html) bytes"
+          rm -f app/src/main/assets/index.b64.* app/src/main/assets/fix06.* app/src/main/assets/fix10.*
 
       - name: Create temporary release signing key
         run: |
