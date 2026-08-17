@@ -30,21 +30,41 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Rebuild vocabulary asset
+      - name: Rebuild and verify vocabulary asset
+        shell: python
         run: |
-          {
-            cat app/src/main/assets/index.b64.00 app/src/main/assets/index.b64.01 app/src/main/assets/index.b64.02 app/src/main/assets/index.b64.03 app/src/main/assets/index.b64.04 app/src/main/assets/index.b64.05
-            cat app/src/main/assets/fix06.a app/src/main/assets/fix06.b
-            cat app/src/main/assets/index.b64.07 app/src/main/assets/index.b64.08 app/src/main/assets/index.b64.09
-            cat app/src/main/assets/fix10.a app/src/main/assets/fix10.b
-            cat app/src/main/assets/index.b64.11 app/src/main/assets/index.b64.12 app/src/main/assets/index.b64.13 app/src/main/assets/index.b64.14 app/src/main/assets/index.b64.15 app/src/main/assets/index.b64.16
-          } | base64 -d > /tmp/index.html.gz
-          gzip -t /tmp/index.html.gz
-          gzip -dc /tmp/index.html.gz > app/src/main/assets/index.html
-          test -s app/src/main/assets/index.html
-          test "$(wc -c < app/src/main/assets/index.html)" -eq 915376
-          echo "Rebuilt index.html: $(wc -c < app/src/main/assets/index.html) bytes"
-          rm -f app/src/main/assets/index.b64.* app/src/main/assets/fix06.* app/src/main/assets/fix10.*
+          from pathlib import Path
+          import base64, gzip, hashlib
+
+          asset_dir = Path('app/src/main/assets')
+          chunks = [asset_dir / f'index.b64.{i:02d}' for i in range(17)]
+          parts = [p.read_text(encoding='ascii') for p in chunks]
+
+          # Two source chunks were damaged during the original connector upload.
+          # Repair the exact known differences before decoding.
+          assert len(parts[6]) == 20006
+          parts[6] = parts[6][:15380] + 'G' + parts[6][15381:20000]
+          assert len(parts[6]) == 20000
+
+          assert len(parts[10]) == 20000
+          parts[10] = parts[10][:19790] + 'e' + parts[10][19791:]
+
+          encoded = ''.join(parts)
+          packed = base64.b64decode(encoded, validate=True)
+          html = gzip.decompress(packed)
+
+          expected_size = 915376
+          expected_sha256 = 'df3ca4a682490d56fd50a9ded0c065d265cc8181f78b70874d7517df0fce9e1a'
+          actual_sha256 = hashlib.sha256(html).hexdigest()
+          assert len(html) == expected_size, (len(html), expected_size)
+          assert actual_sha256 == expected_sha256, actual_sha256
+
+          (asset_dir / 'index.html').write_bytes(html)
+          for p in asset_dir.glob('index.b64.*'):
+              p.unlink()
+          for p in asset_dir.glob('fix*'):
+              p.unlink()
+          print(f'Verified index.html: {len(html)} bytes, sha256={actual_sha256}')
 
       - name: Create temporary release signing key
         run: |
@@ -59,9 +79,14 @@ jobs:
       - name: Build signed release APK
         run: gradle :app:assembleRelease
 
-      - name: Verify APK signature
+      - name: Verify APK signature and packaged asset
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          unzip -l app/build/outputs/apk/release/app-release.apk | grep 'assets/index.html'
+          if unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'assets/index.b64'; then
+            echo 'Unexpected base64 chunks found in APK'
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
