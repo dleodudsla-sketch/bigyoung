@@ -32,7 +32,10 @@ jobs:
 
       - name: Rebuild vocabulary asset
         run: |
-          cat app/src/main/assets/index.b64.* | base64 -d > /tmp/index.html.gz
+          for f in app/src/main/assets/index.b64.*; do
+            tr -cd 'A-Za-z0-9+/=' < "$f"
+          done | base64 -d > /tmp/index.html.gz
+          gzip -t /tmp/index.html.gz
           gzip -dc /tmp/index.html.gz > app/src/main/assets/index.html
           test -s app/src/main/assets/index.html
           echo "Rebuilt index.html: $(wc -c < app/src/main/assets/index.html) bytes"
