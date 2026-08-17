@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_STORE_FILE: release-key.jks
+      RELEASE_STORE_PASSWORD: changeit123
+      RELEASE_KEY_ALIAS: jpvocab
+      RELEASE_KEY_PASSWORD: changeit123
     steps:
       - uses: actions/checkout@v4
 
@@ -32,10 +37,24 @@ jobs:
           test -s app/src/main/assets/index.html
           echo "Rebuilt index.html: $(wc -c < app/src/main/assets/index.html) bytes"
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug
+      - name: Create temporary release signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore app/release-key.jks \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -keypass "$RELEASE_KEY_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Japanese Vocab, OU=Personal, O=Bigyoung, L=Seoul, ST=Seoul, C=KR"
+
+      - name: Build signed release APK
+        run: gradle :app:assembleRelease
+
+      - name: Verify APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: JapaneseVocab-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: JapaneseVocab-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
